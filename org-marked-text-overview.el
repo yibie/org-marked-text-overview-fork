@@ -48,15 +48,23 @@
     (nreverse marked-elements)))
 
 (defun org-marked-text-overview-clean-text (text type)
-  "Remove markup from TEXT based on element TYPE."
-  (pcase type
-    ('bold (string-trim text "*" "*"))
-    ('code (string-trim text "~" "~"))
-    ('underline (string-trim text "_" "_"))
-    ('verbatim (string-trim text "=" "="))
-    ('strike-through (string-trim text "+" "+"))
-    ('italic (string-trim text "/" "/"))
-    (_ text)))
+  "Remove markup from TEXT based on element TYPE.
+
+This function previously called `string-trim' with raw markup
+characters which are treated as regular expressions.  Characters
+such as `*' or `~' have special meaning in regexps and caused an
+`invalid-regexp' error when used directly.  Escape the characters
+so that `string-trim' removes exactly one leading and trailing
+markup character."
+  (let ((regexp (lambda (s) (regexp-quote s))))
+    (pcase type
+      ('bold (string-trim text (funcall regexp "*") (funcall regexp "*")))
+      ('code (string-trim text (funcall regexp "~") (funcall regexp "~")))
+      ('underline (string-trim text (funcall regexp "_") (funcall regexp "_")))
+      ('verbatim (string-trim text (funcall regexp "=") (funcall regexp "=")))
+      ('strike-through (string-trim text (funcall regexp "+") (funcall regexp "+")))
+      ('italic (string-trim text (funcall regexp "/") (funcall regexp "/")))
+      (_ text))))
 
 (defun org-marked-text-overview-collect-elements-markdown ()
   "Collect marked text elements from a Markdown buffer."
