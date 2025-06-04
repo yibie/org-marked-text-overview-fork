@@ -1,4 +1,4 @@
-;;; org-marked-text-overview.el --- Minor mode for overview of marked text in Org mode -*- lexical-binding: t; -*-
+;;; org-marked-text-overview.el --- Minor mode for overview of marked text in Org/Markdown -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024 lijigang
 
@@ -10,8 +10,9 @@
 
 ;;; Commentary:
 
-;; This package provides a minor mode for Org mode that displays an overview
-;; of marked text (bold, verbatim, underline, etc.) in a separate buffer.
+;; This package provides a minor mode for Org or Markdown buffers that
+;; displays an overview of marked text (bold, verbatim, underline, etc.)
+;; in a separate buffer.
 ;; The overview is presented as a read-only bullet list, and clicking on an
 ;; item jumps to its location in the original buffer.
 
@@ -19,9 +20,10 @@
 
 (require 'org)
 (require 'org-element)
+(require 'markdown-mode nil t)
 
 (defgroup org-marked-text-overview nil
-  "Overview of marked text in Org mode."
+  "Overview of marked text in Org or Markdown buffers."
   :group 'org
   :prefix "org-marked-text-overview-")
 
@@ -33,7 +35,7 @@
 (defvar-local org-marked-text-overview-source-buffer nil
   "Buffer from which the overview was generated.")
 
-(defun org-marked-text-overview-collect-elements ()
+(defun org-marked-text-overview-collect-elements-org ()
   "Collect marked text elements from the current Org buffer."
   (let ((marked-elements '()))
     (org-element-map (org-element-parse-buffer) '(bold code underline verbatim strike-through italic)
@@ -56,17 +58,46 @@
     ('italic (string-trim text "/" "/"))
     (_ text)))
 
+(defun org-marked-text-overview-collect-elements-markdown ()
+  "Collect marked text elements from a Markdown buffer."
+  (let ((marked-elements '())
+        (patterns '(("\\*\\*\\([^*]+\\)\\*\\*" . bold)
+                    ("__\\([^_]+\\)__" . underline)
+                    ("`\\([^`]+\\)`" . code)
+                    ("~~\\([^~]+\\)~~" . strike-through)
+                    ("\\(^\\|[^*]\\)\\*\\([^*]+\\)\\*\\([^*]\\|$\\)" . italic)))
+        match-begin)
+    (dolist (pat patterns)
+      (goto-char (point-min))
+      (while (re-search-forward (car pat) nil t)
+        (setq match-begin (match-beginning 0))
+        (push (list :text (match-string-no-properties 1)
+                    :begin match-begin) marked-elements)))
+    (nreverse marked-elements)))
+
+(defun org-marked-text-overview-collect-elements ()
+  "Collect marked text elements based on current major mode."
+  (cond
+   ((derived-mode-p 'org-mode)
+    (org-marked-text-overview-collect-elements-org))
+   ((derived-mode-p 'markdown-mode 'gfm-mode)
+    (org-marked-text-overview-collect-elements-markdown))
+   (t
+    (user-error "Unsupported major mode"))))
+
 (defun org-marked-text-overview-update ()
   "Update the marked text overview buffer."
   (interactive)
-  (when (derived-mode-p 'org-mode)
+  (when (derived-mode-p 'org-mode 'markdown-mode 'gfm-mode)
     (let ((overview-buffer (get-buffer-create org-marked-text-overview-buffer-name))
           (current-buffer (current-buffer))
           (marked-elements (org-marked-text-overview-collect-elements)))
       (with-current-buffer overview-buffer
         (let ((inhibit-read-only t))
           (erase-buffer)
-          (org-mode)
+          (if (derived-mode-p 'markdown-mode 'gfm-mode)
+              (markdown-mode)
+            (org-mode))
           (insert "#+title: Marked Text Overview\n\n")
           (dolist (element marked-elements)
             (let ((text (plist-get element :text))
@@ -108,7 +139,8 @@
                                      (t "Source buffer no longer exists"))))))
 
 (define-minor-mode org-marked-text-overview-mode
-  "Minor mode for displaying an overview of marked text in Org mode."
+  "Minor mode for displaying an overview of marked text.
+Supports Org and Markdown buffers."
   :lighter " OrgMTO"
   (if org-marked-text-overview-mode
       (org-marked-text-overview-update)
